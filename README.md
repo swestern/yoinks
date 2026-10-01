@@ -29,6 +29,21 @@ npx yoinks
 Requires Node 18+. Everything else (yt-dlp, ffmpeg) is fetched or bundled
 automatically.
 
+### Docker
+
+Build the image and mount a host directory so downloads remain available after
+the container exits. This example uses POSIX shell syntax:
+
+```sh
+docker build -t yoinks .
+mkdir -p downloads
+docker run --rm -it \
+  -v "$PWD/downloads:/home/node/Downloads" \
+  yoinks https://youtu.be/dQw4w9WgXcQ
+```
+
+The `-it` flags keep the interactive picker attached to your terminal.
+
 ## Usage
 
 ```sh
