@@ -281,9 +281,12 @@ export function download(
             part,
             totalParts,
           })
-        } else if (line.includes('Downloading 1 format(s):')) {
-          // "[info] xxx: Downloading 1 format(s): 395+251" — each id is one file
-          totalParts = (line.split('format(s):')[1] ?? '').trim().split('+').length
+        } else if (/Downloading (\d+) format\(s\):/.test(line)) {
+          // "[info] xxx: Downloading 2 format(s): 137, 251" — the count is
+          // whatever yt-dlp was asked for, and it joins ids with ", ", so
+          // read the count instead of counting the ids
+          const downloading = /Downloading (\d+) format\(s\):/.exec(line)?.[1]
+          if (downloading) totalParts = Number(downloading)
         } else if (line.includes('[Merger]') || line.includes('[ExtractAudio]')) {
           const merging = /^\[Merger\] Merging formats into "(.+)"$/.exec(line)?.[1]
           const extracting = /^\[ExtractAudio\] Destination: (.+)$/.exec(line)?.[1]
