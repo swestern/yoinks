@@ -52,7 +52,7 @@ export function themeFor(mode: ThemeMode): Theme {
   return themes[mode]
 }
 
-export function ThemeProvider({mode, children}: {mode: ThemeMode; children: ReactNode}) {
+export function ThemeProvider({mode, children}: {mode: ThemeMode; children?: ReactNode}) {
   return React.createElement(ThemeContext.Provider, {value: themeFor(mode)}, children)
 }
 

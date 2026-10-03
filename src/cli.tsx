@@ -23,11 +23,15 @@ const HELP = `
     $ yoinks                 (prompts for a url)
 
   Options
-    --theme <mode>  use auto, light, or dark for this run
-    -h, --help      show this help
-    -v, --version   show version
+    --theme <mode>          use auto, light, or dark
+    --plain, --accessible   plain accessible text mode (no alt-screen)
+    --no-mouse              disable mouse tracking to allow native text selection
+    --no-motion             disable animated shimmer/sweeps
+    -o, --output <dir>      save downloads to custom directory (default: current directory ./)
+    -h, --help              show this help
+    -v, --version           show version
 
-  Downloads are saved to ~/Downloads.
+  Downloads are saved to current directory ./ by default (press ^d in app for ~/Downloads).
   Powered by yt-dlp — YouTube, X, Instagram, Threads, TikTok & 1800+ sites.
 `
 
@@ -52,6 +56,7 @@ const initialUrl = args.initialUrl
 const initialThemeMode = args.themeMode ?? 'auto'
 
 const isTTY = Boolean(process.stdout.isTTY)
+const useAltScreen = isTTY && !args.plain && process.env.TERM !== 'dumb'
 
 // no url given — offer the clipboard url (⇥ to paste) when it already holds one
 let clipboardUrl: string | undefined
@@ -64,7 +69,7 @@ const enterAltScreen = () => process.stdout.write('\x1b[?1049h\x1b[H')
 // also switch mouse tracking off — a crash can skip React effect cleanup
 const leaveAltScreen = () => process.stdout.write('\x1b[?1006l\x1b[?1000l\x1b[?1049l')
 
-if (isTTY) {
+if (useAltScreen) {
   enterAltScreen()
   process.on('exit', leaveAltScreen)
   // restore the terminal BEFORE a crash prints, or the stack trace is
@@ -77,6 +82,15 @@ if (isTTY) {
       process.exit(1)
     })
   }
+
+  process.on('SIGINT', () => {
+    leaveAltScreen()
+    process.exit(130)
+  })
+  process.on('SIGTERM', () => {
+    leaveAltScreen()
+    process.exit(143)
+  })
 }
 
 let outcome: Outcome = {}
@@ -85,6 +99,10 @@ const {waitUntilExit} = render(
     initialUrl={initialUrl}
     clipboardUrl={clipboardUrl}
     initialThemeMode={initialThemeMode}
+    plain={args.plain}
+    noMouse={args.noMouse}
+    noMotion={args.noMotion}
+    outputDir={args.outputDir}
     onOutcome={result => (outcome = result)}
   />,
   // keep a copy of every frame so clicks can be hit-tested against it
@@ -93,7 +111,9 @@ const {waitUntilExit} = render(
 
 await waitUntilExit()
 
-if (isTTY) leaveAltScreen()
+if (useAltScreen) leaveAltScreen()
 if (outcome.filepath) {
   console.log(`✓ yoinked → ${outcome.filepath}`)
+} else if (outcome.error) {
+  process.exit(1)
 }

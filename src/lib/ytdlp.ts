@@ -281,9 +281,9 @@ export function download(
             part,
             totalParts,
           })
-        } else if (line.includes('Downloading 1 format(s):')) {
-          // "[info] xxx: Downloading 1 format(s): 395+251" — each id is one file
-          totalParts = (line.split('format(s):')[1] ?? '').trim().split('+').length
+        } else if (/Downloading \d+ format\(s\):/.test(line)) {
+          const count = parseFormatCount(line)
+          if (count !== undefined) totalParts = count
         } else if (line.includes('[Merger]') || line.includes('[ExtractAudio]')) {
           const merging = /^\[Merger\] Merging formats into "(.+)"$/.exec(line)?.[1]
           const extracting = /^\[ExtractAudio\] Destination: (.+)$/.exec(line)?.[1]
@@ -338,3 +338,24 @@ function cleanYtDlpError(stderr: string): string {
   const last = lines.at(-1)
   return last ? last.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?/, '') : ''
 }
+
+export function parseFormatCount(line: string): number | undefined {
+  const match = /Downloading (\d+) format\(s\):/.exec(line)
+  if (match?.[1]) {
+    const n = Number.parseInt(match[1], 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return undefined
+}
+
+export async function cleanupInfoJson(filePath?: string): Promise<void> {
+  if (filePath) {
+    try {
+      await fs.rm(filePath, {force: true})
+    } catch {
+      // ignore
+    }
+  }
+}
+
+

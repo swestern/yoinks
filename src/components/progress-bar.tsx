@@ -4,7 +4,8 @@ import {useTheme} from '../theme.js'
 
 export function ProgressBar({percent, width = 30}: {percent: number; width?: number}) {
   const theme = useTheme()
-  const clamped = Math.max(0, Math.min(1, percent))
+  const safePercent = Number.isFinite(percent) ? percent : 0
+  const clamped = Math.max(0, Math.min(1, safePercent))
   const filled = Math.round(clamped * width)
   return (
     <Text>

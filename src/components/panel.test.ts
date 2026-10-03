@@ -41,3 +41,29 @@ test('forced themes paint native border cells with the theme background', async 
     else process.env.NO_COLOR = previousNoColor
   }
 })
+
+test('Panel truncates overlong titles to fit inside width without breaking border', async () => {
+  const [{default: React}, {renderToString, Text}, {Panel}, {ThemeProvider}] = await Promise.all([
+    import('react'),
+    import('ink'),
+    import('./panel.js'),
+    import('../theme.js'),
+  ])
+
+  const out = renderToString(
+    React.createElement(
+      ThemeProvider,
+      {mode: 'dark'},
+      React.createElement(Panel, {
+        title: 'Super Long Title That Absolutely Exceeds The Small Width',
+        width: 15,
+        children: React.createElement(Text, null, 'content'),
+      }),
+    ),
+  )
+
+  // Title should be truncated with ellipsis '…' and not show the full long string
+  assert.match(out, /…/)
+  assert.doesNotMatch(out, /Super Long Title That Absolutely Exceeds/)
+})
+

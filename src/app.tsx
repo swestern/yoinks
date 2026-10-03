@@ -19,6 +19,7 @@ import {useMouseClick} from './lib/use-mouse-click.js'
 import {nextThemeMode, ThemeProvider, type ThemeMode, useTheme} from './theme.js'
 import {
   buildChoices,
+  cleanupInfoJson,
   download,
   ensureYtDlp,
   findFfmpeg,
@@ -28,7 +29,8 @@ import {
   type VideoInfo,
 } from './lib/ytdlp.js'
 
-const OUT_DIR = path.join(os.homedir(), 'Downloads')
+const DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads')
+const CWD_DIR = process.cwd()
 const YOINK_BUTTON = 'yoink'
 const DONE_LABEL = '↵ yoink another'
 const TAGLINE = 'yoink any video. paste. yoink. done.'
@@ -83,7 +85,7 @@ function indeterminateMeta(progress: DownloadProgress): string {
   return `${partLabel(progress)}${bytes.padStart(8)}  ${speed.padEnd(10)}`
 }
 
-export type Outcome = {filepath?: string}
+export type Outcome = {filepath?: string; error?: string}
 
 type Phase =
   | {name: 'input'; warning?: string}
@@ -106,21 +108,28 @@ const HINTS: Record<Phase['name'], Array<[string, string]>> = {
   ],
   probing: [
     ['esc', 'cancel'],
+    ['^h', 'home'],
     ['^c', 'quit'],
   ],
   picking: [
     ['↑↓', 'choose'],
     ['↵', 'yoink'],
     ['esc', 'back'],
+    ['^h', 'home'],
     ['^c', 'quit'],
   ],
   downloading: [
     ['esc', 'cancel'],
+    ['^h', 'home'],
     ['^c', 'quit'],
   ],
-  done: [['^c', 'quit']],
+  done: [
+    ['^h', 'home'],
+    ['^c', 'quit'],
+  ],
   error: [
     ['↵', 'try again'],
+    ['^h', 'home'],
     ['^c', 'quit'],
   ],
 }
@@ -129,6 +138,10 @@ type AppProps = {
   initialUrl?: string
   clipboardUrl?: string
   initialThemeMode?: ThemeMode
+  plain?: boolean
+  noMouse?: boolean
+  noMotion?: boolean
+  outputDir?: string
   onOutcome: (outcome: Outcome) => void
 }
 
@@ -148,11 +161,19 @@ export function App({initialThemeMode = 'auto', ...props}: AppProps) {
 function AppContent({
   initialUrl,
   clipboardUrl,
+  plain = false,
+  noMouse = false,
+  noMotion = false,
+  outputDir,
   onOutcome,
   cycleTheme,
 }: {
   initialUrl?: string
   clipboardUrl?: string
+  plain?: boolean
+  noMouse?: boolean
+  noMotion?: boolean
+  outputDir?: string
   onOutcome: (outcome: Outcome) => void
   cycleTheme: () => void
 }) {
@@ -170,12 +191,21 @@ function AppContent({
   const infoJsonRef = useRef<string | undefined>(undefined)
   const abortRef = useRef<AbortController | undefined>(undefined)
   const [phase, setPhase] = useState<Phase>(initialUrl ? {name: 'probing', status: 'warming up…'} : {name: 'input'})
+  const [saveTarget, setSaveTarget] = useState<'cwd' | 'downloads'>('cwd')
+  const activeOutDir = outputDir ?? (saveTarget === 'cwd' ? CWD_DIR : DOWNLOADS_DIR)
+
+  const toggleSaveTarget = useCallback(() => {
+    setSaveTarget(prev => (prev === 'cwd' ? 'downloads' : 'cwd'))
+  }, [])
 
   const columns = stdout?.columns && stdout.columns > 0 ? stdout.columns : 80
   const boxWidth = Math.max(14, Math.min(64, columns - 6))
   const contentWidth = Math.max(10, Math.min(columns - 4, 78))
 
   const startProbe = useCallback(async (targetUrl: string) => {
+    abortRef.current?.abort()
+    void cleanupInfoJson(infoJsonRef.current)
+    infoJsonRef.current = undefined
     const controller = new AbortController()
     abortRef.current = controller
     setPlatform(detectPlatform(targetUrl))
@@ -196,15 +226,20 @@ function AppContent({
       setPhase({name: 'picking'})
     } catch (error) {
       if (controller.signal.aborted) return
-      setPhase({name: 'error', message: error instanceof Error ? error.message : String(error)})
+      process.stdout.write('\x07')
+      const msg = error instanceof Error ? error.message : String(error)
+      onOutcome({error: msg})
+      setPhase({name: 'error', message: msg})
     }
-  }, [])
+  }, [onOutcome])
 
   useEffect(() => {
     if (initialUrl) void startProbe(initialUrl)
   }, [initialUrl, startProbe])
 
   const resetToInput = useCallback(() => {
+    void cleanupInfoJson(infoJsonRef.current)
+    infoJsonRef.current = undefined
     setUrl('')
     setUrlInput('')
     setPlatform(undefined)
@@ -215,6 +250,8 @@ function AppContent({
 
   const cancelRun = useCallback(() => {
     abortRef.current?.abort()
+    void cleanupInfoJson(infoJsonRef.current)
+    infoJsonRef.current = undefined
     resetToInput()
     setUrlInput(url) // keep the link around so a cancel isn't destructive
   }, [resetToInput, url])
@@ -223,6 +260,15 @@ function AppContent({
     (input, key) => {
       if (key.ctrl && input === 't') {
         cycleTheme()
+        return
+      }
+      if (key.ctrl && input === 'h') {
+        if (phase.name === 'probing' || phase.name === 'downloading') cancelRun()
+        else if (phase.name !== 'input') resetToInput()
+        return
+      }
+      if (key.ctrl && input === 'd' && !outputDir) {
+        toggleSaveTarget()
         return
       }
       if (key.escape && (phase.name === 'picking' || phase.name === 'error' || phase.name === 'done')) resetToInput()
@@ -259,7 +305,8 @@ function AppContent({
       }
       try {
         const ffmpegLocation = await findFfmpeg()
-        const base = {ytdlp: ytdlpRef.current, ffmpegLocation, url, choice, outDir: OUT_DIR}
+        const targetDir = activeOutDir
+        const base = {ytdlp: ytdlpRef.current, ffmpegLocation, url, choice, outDir: targetDir}
         let filepath: string
         try {
           // reuse the probe's metadata — starts immediately instead of re-extracting
@@ -271,21 +318,34 @@ function AppContent({
             prev.name === 'downloading' ? {...prev, progress: undefined, refreshing: true} : prev,
           )
           filepath = await download(base, handlers, controller.signal)
+        } finally {
+          void cleanupInfoJson(infoJsonRef.current)
+          infoJsonRef.current = undefined
         }
+        process.stdout.write('\x07')
         onOutcome({filepath})
         setHistory(addToHistory(url))
         setPhase({name: 'done', filepath})
       } catch (error) {
         if (controller.signal.aborted) return
-        setPhase({name: 'error', message: error instanceof Error ? error.message : String(error)})
+        process.stdout.write('\x07')
+        const msg = error instanceof Error ? error.message : String(error)
+        onOutcome({error: msg})
+        setPhase({name: 'error', message: msg})
       }
     })()
   }
 
-  let hints: Array<[string, string]> = [...HINTS[phase.name], ['^t', `theme:${theme.mode}`]]
-  if (phase.name === 'input' && history.length > 0) {
-    hints = [hints[0]!, ['↑', 'history'], ...hints.slice(1)]
+  let hints: Array<[string, string]> = [...HINTS[phase.name]]
+  if (phase.name === 'input') {
+    if (history.length > 0) {
+      hints.push(['↑', 'history'])
+    }
+    if (!outputDir) {
+      hints.push(['^d', saveTarget === 'cwd' ? 'to:Downloads' : 'to:./'])
+    }
   }
+  hints.push(['^t', `theme:${theme.mode}`])
 
   // Anything a mouse user would expect to press is clickable. Targets are
   // found by their text in the rendered frame (see lib/click-map.ts), so
@@ -293,6 +353,8 @@ function AppContent({
   const hintAction = (key: string): (() => void) | undefined => {
     if (key === '^c') return () => exit()
     if (key === '^t') return cycleTheme
+    if (key === '^d' && !outputDir) return toggleSaveTarget
+    if (key === '^h') return phase.name === 'probing' || phase.name === 'downloading' ? cancelRun : resetToInput
     if (key === 'esc') return phase.name === 'probing' || phase.name === 'downloading' ? cancelRun : resetToInput
     if (key === '↵') {
       if (phase.name === 'input') return () => handleUrlSubmit(urlInput)
@@ -305,6 +367,9 @@ function AppContent({
   if (phase.name === 'input') {
     // the frame button rows above/below the label are part of the button
     clickTargets.push({match: `  ${YOINK_BUTTON}  `, padY: 1, action: () => handleUrlSubmit(urlInput)})
+    if (!outputDir) {
+      clickTargets.push({match: '^d to switch', action: toggleSaveTarget})
+    }
   }
   if (phase.name === 'picking') {
     for (const [index, choice] of choices.entries()) {
@@ -333,12 +398,12 @@ function AppContent({
       }
       clickTargetAt(x, y, clickTargets)?.action()
     },
-    Boolean(process.stdin.isTTY),
+    Boolean(process.stdin.isTTY) && !noMouse,
   )
 
   return (
     <FullScreen>
-      <Logo />
+      <Logo noMotion={noMotion || plain} />
       <Gap />
       <Text color={theme.primary}>{TAGLINE}</Text>
       <Text color={theme.gray} dimColor={theme.dimSecondary}>youtube · x · instagram · threads · tiktok · +1800 more</Text>
@@ -360,6 +425,11 @@ function AppContent({
               }}
             />
           </FramedInput>
+          <Gap />
+          <Text color={theme.gray} dimColor={theme.dimSecondary}>
+            saving to: <Text color={theme.primary}>{outputDir ? shortenPath(outputDir, os.homedir(), 30) : saveTarget === 'cwd' ? './ (current folder)' : '~/Downloads'}</Text>
+            {!outputDir ? <Text> · ^d to switch</Text> : null}
+          </Text>
           {phase.warning ? (
             <Text color={theme.gray} dimColor={theme.dimSecondary}>✗ {phase.warning}</Text>
           ) : clipboardOffered ? (

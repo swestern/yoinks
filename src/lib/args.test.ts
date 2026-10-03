@@ -54,3 +54,24 @@ test('auto delegates to terminal colors while forced modes own the full surface'
   assert.equal(themeFor('dark').background, '#18181b')
   assert.equal(themeFor('dark').primary, '#ffffff')
 })
+
+test('parses --plain and --accessible flags', () => {
+  assert.equal(parseArgs(['--plain']).plain, true)
+  assert.equal(parseArgs(['--accessible']).plain, true)
+})
+
+test('parses --no-mouse and --no-motion flags', () => {
+  assert.equal(parseArgs(['--no-mouse']).noMouse, true)
+  assert.equal(parseArgs(['--no-motion']).noMotion, true)
+})
+
+test('parses -o and --output options', () => {
+  assert.equal(parseArgs(['-o', '/custom/downloads']).outputDir, '/custom/downloads')
+  assert.equal(parseArgs(['--output', '/custom/downloads']).outputDir, '/custom/downloads')
+  assert.equal(parseArgs(['--output=/custom/downloads']).outputDir, '/custom/downloads')
+  assert.match(parseArgs(['-o']).error ?? '', /needs a value/)
+})
+
+test('rejects high-contrast as unsupported', () => {
+  assert.equal(isThemeMode('high-contrast'), false)
+})

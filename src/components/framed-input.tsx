@@ -31,8 +31,10 @@ export function FramedInput({
   children: ReactNode
 }) {
   const theme = useTheme()
-  const inner = width - 2
-  const tail = Math.max(0, inner - title.length - 3)
+  const inner = Math.max(4, width - 2)
+  const maxTitleLen = Math.max(1, inner - 4)
+  const displayTitle = title.length > maxTitleLen ? `${title.slice(0, Math.max(0, maxTitleLen - 1))}…` : title
+  const tail = Math.max(0, inner - displayTitle.length - 3)
   const buttonW = button ? frameButtonWidth(button) : 0
   const fillColor = buttonDim ? theme.gray : theme.primary
   return (
@@ -40,7 +42,7 @@ export function FramedInput({
       <Box flexDirection="column" width={width}>
         <Text>
           <Text color={theme.gray} dimColor={theme.dimSecondary}>{'╭─ '}</Text>
-          <Text color={theme.primary}>{title}</Text>
+          <Text color={theme.primary}>{displayTitle}</Text>
           <Text color={theme.gray} dimColor={theme.dimSecondary}>{` ${'─'.repeat(tail)}${button ? '─' : '╮'}`}</Text>
         </Text>
         <Box width={width} height={1} overflow="hidden">

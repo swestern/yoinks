@@ -184,15 +184,40 @@ export function TextInput({
     )
   }
 
-  const cells = Array.from({length: Math.min(span, value.length - offset + 1)}, (_, column) => {
-    const index = offset + column
-    const selected = selection !== null && index >= selection[0] && index < selection[1]
-    const atCursor = selection === null && index === cursor
+  const visibleStart = offset
+  const visibleEnd = offset + span
+  const visible = value.slice(visibleStart, visibleEnd)
+
+  if (selection !== null) {
+    const selStart = Math.max(visibleStart, selection[0])
+    const selEnd = Math.min(visibleEnd, selection[1])
+
+    const before = value.slice(visibleStart, Math.min(visibleEnd, selection[0]))
+    const selected = value.slice(selStart, selEnd)
+    const after = value.slice(Math.max(visibleStart, selection[1]), visibleEnd)
+
     return (
-      <Text key={index} color={theme.primary} inverse={selected || atCursor}>
-        {value[index] ?? ' '}
+      <Text color={theme.primary}>
+        {before ? <Text>{before}</Text> : null}
+        {selected ? <Text inverse>{selected}</Text> : null}
+        {after ? <Text>{after}</Text> : null}
       </Text>
     )
-  })
-  return <Text>{cells}</Text>
+  }
+
+  if (cursor < visibleStart || cursor > visibleEnd) {
+    return <Text color={theme.primary}>{visible}</Text>
+  }
+
+  const before = value.slice(visibleStart, cursor)
+  const cursorChar = cursor < value.length ? value[cursor]! : ' '
+  const after = value.slice(cursor + 1, visibleEnd)
+
+  return (
+    <Text color={theme.primary}>
+      {before ? <Text>{before}</Text> : null}
+      <Text inverse>{cursorChar}</Text>
+      {after ? <Text>{after}</Text> : null}
+    </Text>
+  )
 }

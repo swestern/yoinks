@@ -65,9 +65,10 @@ function renderRow(row: number, phase: Phase, t: number, delays: number[], theme
   ))
 }
 
-export function Logo() {
+export function Logo({noMotion = false}: {noMotion?: boolean}) {
   const theme = useTheme()
-  const animated = Boolean(process.stdout.isTTY)
+  const isReducedMotion = noMotion || Boolean(process.env.NO_COLOR) || process.env.TERM === 'dumb'
+  const animated = Boolean(process.stdout.isTTY) && !isReducedMotion
   const delays = useMemo(
     () => GRID.map(row => row.map(() => Math.random() * INTRO_SPREAD_MS)),
     [],
