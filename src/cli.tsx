@@ -6,6 +6,7 @@ import {captureFrames} from './lib/click-map.js'
 import {parseArgs} from './lib/args.js'
 import {readClipboard} from './lib/clipboard.js'
 import {isProbablyUrl} from './lib/platforms.js'
+import {ensureOutputDir, resolveOutputDir} from './lib/output-dir.js'
 
 // read at runtime from the shipped package.json so npm version bumps
 // can't drift from a hardcoded constant
@@ -19,15 +20,17 @@ const HELP = `
 
   Examples
     $ yoinks https://youtu.be/dQw4w9WgXcQ
+    $ yoinks -o ~/Videos https://youtu.be/dQw4w9WgXcQ
     $ yoinks https://x.com/user/status/123456
     $ yoinks                 (prompts for a url)
 
   Options
-    --theme <mode>  use auto, light, or dark for this run
-    -h, --help      show this help
-    -v, --version   show version
+    -o, --output <dir>  save downloads to <dir> (default: ~/Downloads)
+    --theme <mode>      use auto, light, or dark for this run
+    -h, --help          show this help
+    -v, --version       show version
 
-  Downloads are saved to ~/Downloads.
+  Downloads are saved to ~/Downloads unless you pass -o.
   Powered by yt-dlp — YouTube, X, Instagram, Threads, TikTok & 1800+ sites.
 `
 
@@ -46,6 +49,15 @@ if (args.help) {
 if (args.version) {
   console.log(VERSION)
   process.exit(0)
+}
+
+const outDir = resolveOutputDir(args.outputDir)
+
+try {
+  ensureOutputDir(outDir)
+} catch (error) {
+  console.error(`yoinks: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
 }
 
 const initialUrl = args.initialUrl
@@ -85,6 +97,7 @@ const {waitUntilExit} = render(
     initialUrl={initialUrl}
     clipboardUrl={clipboardUrl}
     initialThemeMode={initialThemeMode}
+    outDir={outDir}
     onOutcome={result => (outcome = result)}
   />,
   // keep a copy of every frame so clicks can be hit-tested against it
