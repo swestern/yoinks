@@ -136,9 +136,19 @@ export type DownloadChoice = {
   label: string
   kind: 'video' | 'audio'
   args: string[]
+  compatibility?: 'quicktime'
 }
 
 const MAX_VIDEO_CHOICES = 8
+const H264_CODEC = /^(avc[13]|h264)(\.|$)/
+const AAC_CODEC = /^(mp4a\.40\.|aac$)/
+
+// Reuse the same codec rules for availability and yt-dlp selection. Every
+// fallback must keep both codecs constrained: an MP4 container alone does
+// not guarantee QuickTime can play the streams inside it.
+const H264_FILTER = `[vcodec~='${H264_CODEC.source}']`
+const AAC_FILTER = `[acodec~='${AAC_CODEC.source}']`
+const QUICKTIME_FORMAT = `bv${H264_FILTER}+ba${AAC_FILTER}/b${H264_FILTER}${AAC_FILTER}`
 
 export function buildChoices(info: VideoInfo): DownloadChoice[] {
   const formats = info.formats ?? []
@@ -174,6 +184,20 @@ export function buildChoices(info: VideoInfo): DownloadChoice[] {
       kind: 'video',
       label: 'best available · mp4',
       args: ['-f', 'bv*+ba/b', '--merge-output-format', 'mp4'],
+    })
+  }
+
+  const hasAacAudio = audioOnly.some(f => f.vcodec === 'none' && AAC_CODEC.test(f.acodec ?? ''))
+  const hasCompatibleVideo = formats.some(
+    f => H264_CODEC.test(f.vcodec ?? '') &&
+      (AAC_CODEC.test(f.acodec ?? '') || (f.acodec === 'none' && hasAacAudio)),
+  )
+  if (hasCompatibleVideo) {
+    choices.push({
+      kind: 'video',
+      compatibility: 'quicktime',
+      label: 'QuickTime · H.264/AAC',
+      args: ['-f', QUICKTIME_FORMAT, '--merge-output-format', 'mp4', '--remux-video', 'mp4'],
     })
   }
 
@@ -244,7 +268,9 @@ export function download(
     'after_move:filepath',
     '--no-simulate',
     '-o',
-    path.join(opts.outDir, '%(title).60s.%(ext)s'),
+    // Keep this separate from a previous AV1/Opus download of the same title:
+    // yt-dlp can reuse an existing output instead of downloading it again.
+    path.join(opts.outDir, `%(title).60s${opts.choice.compatibility === 'quicktime' ? '.quicktime' : ''}.%(ext)s`),
   ]
   if (opts.ffmpegLocation) args.push('--ffmpeg-location', opts.ffmpegLocation)
 
@@ -284,10 +310,11 @@ export function download(
         } else if (line.includes('Downloading 1 format(s):')) {
           // "[info] xxx: Downloading 1 format(s): 395+251" — each id is one file
           totalParts = (line.split('format(s):')[1] ?? '').trim().split('+').length
-        } else if (line.includes('[Merger]') || line.includes('[ExtractAudio]')) {
+        } else if (line.includes('[Merger]') || line.includes('[ExtractAudio]') || line.includes('[VideoRemuxer]')) {
           const merging = /^\[Merger\] Merging formats into "(.+)"$/.exec(line)?.[1]
           const extracting = /^\[ExtractAudio\] Destination: (.+)$/.exec(line)?.[1]
-          const target = merging ?? extracting
+          const remuxing = /^\[VideoRemuxer\] Remuxing video from \S+ to \S+; Destination: (.+)$/.exec(line)?.[1]
+          const target = merging ?? extracting ?? remuxing
           if (target) destinations.push(target)
           handlers.onProcessing()
         } else if (line.startsWith('[download] Destination: ')) {

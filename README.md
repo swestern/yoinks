@@ -44,6 +44,15 @@ button, the format list and the footer hints are all clickable, and
 clicking the logo takes you back home. Files are saved to `~/Downloads`,
 and the file path is printed to your terminal when you're done.
 
+For QuickTime Player, choose **QuickTime · H.264/AAC**. This option downloads
+H.264 video with AAC audio and saves an MP4 without re-encoding. It appears
+when the source offers a compatible video/audio pair or a combined file;
+otherwise the picker shows that H.264/AAC is unavailable. Compatible streams
+may have a lower resolution than the regular video choices. Files use a
+`.quicktime.mp4` suffix so an existing regular download cannot be reused by
+mistake. The regular resolution choices still select the best available
+streams, which may use codecs such as AV1 or Opus even in an MP4 container.
+
 The default `auto` theme uses your terminal's own foreground and background,
 so it follows light and dark terminal themes without guessing. Press `^t` or
 click the theme control in the footer to cycle through `auto`, `light`, and

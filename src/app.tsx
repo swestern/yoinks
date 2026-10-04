@@ -407,6 +407,9 @@ function AppContent({
               onSelect={handlePick}
               onHighlight={item => (highlightRef.current = item.value)}
             />
+            {!choices.some(choice => choice.compatibility === 'quicktime') && (
+              <Text color={theme.gray} dimColor={theme.dimSecondary}>QuickTime: H.264/AAC unavailable</Text>
+            )}
           </Panel>
         </Box>
       )}
